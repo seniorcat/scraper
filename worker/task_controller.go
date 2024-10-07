@@ -6,6 +6,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// Status определяет состояние задачи или воркера
+type Status string
+
+const (
+	StatusIdle       Status = "Idle"
+	StatusBusy       Status = "Busy"
+	StatusError      Status = "Error"
+	StatusPending    Status = "Pending"
+	StatusInProgress Status = "In Progress"
+	StatusCompleted  Status = "Completed"
+)
+
 // Task представляет собой задачу, которая должна быть обработана воркером
 type Task struct {
 	Type     string
@@ -48,15 +60,26 @@ func (tc *TaskController) Stop() {
 // processTasks распределяет задачи между воркерами
 func (tc *TaskController) processTasks() {
 	for task := range tc.TaskQueue {
+		tc.Logger.Info("Task received", zap.String("task_type", task.Type))
+
 		switch task.Type {
 		case "category":
+			tc.updateWorkerStatus("CategoryWorker", StatusBusy)
 			tc.processCategoryTask()
+			tc.updateWorkerStatus("CategoryWorker", StatusIdle)
 		case "recipe":
+			tc.updateWorkerStatus("RecipeWorker", StatusBusy)
 			if task.Category != nil {
 				tc.processRecipeTask(*task.Category)
 			}
+			tc.updateWorkerStatus("RecipeWorker", StatusIdle)
 		}
 	}
+}
+
+// Обновление статуса воркера
+func (tc *TaskController) updateWorkerStatus(workerName string, status Status) {
+	tc.Logger.Info("Worker status updated", zap.String("worker", workerName), zap.String("status", string(status)))
 }
 
 // processCategoryTask обрабатывает задачи парсинга категорий
@@ -68,7 +91,8 @@ func (tc *TaskController) processCategoryTask() {
 		return
 	}
 
-	// Передаем задачи парсинга рецептов в очередь
+	tc.Logger.Info("Successfully processed category task", zap.Int("count", len(categories)))
+
 	for _, category := range categories {
 		tc.TaskQueue <- Task{Type: "recipe", Category: &category}
 	}
@@ -83,8 +107,5 @@ func (tc *TaskController) processRecipeTask(category Category) {
 		return
 	}
 
-	// Обработка результата
-	for _, recipe := range recipes {
-		tc.Logger.Info("Recipe processed", zap.String("Name", recipe.Name))
-	}
+	tc.Logger.Info("Successfully processed recipe task", zap.Int("count", len(recipes)), zap.String("Category", category.Name))
 }

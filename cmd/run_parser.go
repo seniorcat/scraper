@@ -41,6 +41,9 @@ func RunParser() {
 	// Запуск контроллера задач
 	go taskController.Start()
 
+	// Логирование запуска задачи
+	logger.Info("Adding category parsing task to the queue")
+
 	// Добавление задачи для парсинга категорий
 	taskController.TaskQueue <- worker.Task{Type: "category"}
 
