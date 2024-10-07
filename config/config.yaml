@@ -1,0 +1,9 @@
+database:
+  url: "postgres://user:password@localhost:5432/scraperdb?sslmode=disable"
+
+worker:
+  type: 1
+  maxRecipes: 20
+  timeout: 30
+  maxRetries: 3
+  retryInterval: 5
