@@ -40,7 +40,7 @@ func RunParser() {
 	// Создание контроллера задач
 	taskController := worker.NewTaskController(categoryWorker, recipeWorker, logger, time.Duration(retryInterval)*time.Second, int(maxRetries))
 
-	// Запуск контроллера задач
+	// Запуск контроллера задач и воркеров
 	go taskController.Start()
 
 	// Логирование запуска задачи

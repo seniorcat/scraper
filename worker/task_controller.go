@@ -27,15 +27,26 @@ type Task struct {
 	RetryCount int
 }
 
+// Result представляет результат выполнения задачи
+type Result struct {
+	TaskID  string
+	Recipes []Recipe
+}
+
 // TaskController управляет распределением задач между воркерами
 type TaskController struct {
 	CategoryWorker *CategoryWorker
 	RecipeWorker   *RecipeWorker
-	TaskQueue      chan Task
-	Logger         *zap.Logger
-	wg             sync.WaitGroup
-	retryInterval  time.Duration
-	maxRetries     int
+
+	// Каналы для задач и результатов
+	TaskQueue   chan Task
+	ResultQueue chan Result
+
+	Logger *zap.Logger
+	wg     sync.WaitGroup
+
+	retryInterval time.Duration
+	maxRetries    int
 }
 
 // NewTaskController создает новый экземпляр TaskController
@@ -43,10 +54,14 @@ func NewTaskController(categoryWorker *CategoryWorker, recipeWorker *RecipeWorke
 	return &TaskController{
 		CategoryWorker: categoryWorker,
 		RecipeWorker:   recipeWorker,
-		TaskQueue:      make(chan Task, 100), // Очередь задач
-		Logger:         logger,
-		retryInterval:  retryInterval,
-		maxRetries:     maxRetries,
+
+		// Инициализация каналов
+		TaskQueue:   make(chan Task, 100),
+		ResultQueue: make(chan Result, 100),
+
+		Logger:        logger,
+		retryInterval: retryInterval,
+		maxRetries:    maxRetries,
 	}
 }
 
@@ -55,12 +70,14 @@ func (tc *TaskController) Start() {
 	tc.Logger.Info("Task Controller started")
 	tc.wg.Add(1)
 	go tc.processTasks()
+	go tc.ProcessResults() // Запускаем обработку результатов
 	tc.wg.Wait()
 }
 
 // Stop завершает работу контроллера задач
 func (tc *TaskController) Stop() {
 	close(tc.TaskQueue)
+	close(tc.ResultQueue)
 	tc.wg.Done()
 }
 
@@ -87,6 +104,16 @@ func (tc *TaskController) processTasks() {
 			}
 			tc.updateWorkerStatus("RecipeWorker", StatusIdle)
 		}
+	}
+}
+
+// ProcessResults обрабатывает результаты из канала ResultQueue
+func (tc *TaskController) ProcessResults() {
+	for result := range tc.ResultQueue {
+		// Обрабатываем результат выполнения задачи
+		tc.Logger.Info("Result received", zap.String("task_id", result.TaskID), zap.Int("recipes_count", len(result.Recipes)))
+
+		// Дополнительная логика обработки результатов
 	}
 }
 
@@ -129,7 +156,14 @@ func (tc *TaskController) processCategoryTask() error {
 	tc.Logger.Info("Successfully processed category task", zap.Int("count", len(categories)))
 
 	for _, category := range categories {
-		tc.TaskQueue <- Task{Type: "recipe", Category: &category}
+		task := Task{
+			ID:       category.Name,
+			Type:     "recipe",
+			Category: &category,
+		}
+
+		// Отправляем задачу в канал TaskQueue
+		tc.TaskQueue <- task
 	}
 	return nil
 }
@@ -140,6 +174,12 @@ func (tc *TaskController) processRecipeTask(category Category) error {
 	recipes, err := tc.RecipeWorker.Start(category)
 	if err != nil {
 		return err
+	}
+
+	// Отправляем результаты парсинга в канал результатов
+	tc.ResultQueue <- Result{
+		TaskID:  category.Name,
+		Recipes: recipes,
 	}
 
 	tc.Logger.Info("Successfully processed recipe task", zap.Int("count", len(recipes)), zap.String("Category", category.Name))
