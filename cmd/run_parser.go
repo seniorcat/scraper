@@ -32,22 +32,35 @@ func RunParser() {
 	maxRecipes := cfg.Worker.MaxRecipes
 	retryInterval := cfg.Worker.RetryInterval
 	maxRetries := cfg.Worker.MaxRetries
+	concurrency := cfg.Worker.Concurrency
 
-	// Создание воркеров с использованием конфигурации
+	// Создание воркера для категорий
 	categoryWorker := worker.NewCategoryWorker(logger, time.Duration(timeout)*time.Second)
-	recipeWorker := worker.NewRecipeWorker(logger, int(maxRecipes), time.Duration(timeout)*time.Second)
 
-	// Создание контроллера задач
-	taskController := worker.NewTaskController(categoryWorker, recipeWorker, logger, time.Duration(retryInterval)*time.Second, int(maxRetries))
+	// Создание контроллера задач с пулом воркеров
+	taskController := worker.NewTaskController(categoryWorker, int(concurrency), logger, time.Duration(retryInterval)*time.Second, int(maxRetries))
 
-	// Запуск контроллера задач и воркеров
-	go taskController.Start()
+	// Запуск контроллера задач и пула воркеров
+	go taskController.Start(int(maxRecipes), time.Duration(timeout)*time.Second)
 
 	// Логирование запуска задачи
 	logger.Info("Adding category parsing task to the queue")
 
-	// Добавление задачи для парсинга категорий
-	taskController.TaskQueue <- worker.Task{Type: "category"}
+	// Парсинг категорий
+	categories, err := categoryWorker.Start()
+	if err != nil {
+		logger.Fatal("Ошибка парсинга категорий", zap.Error(err))
+	}
+
+	// Добавление задач для парсинга рецептов в TaskQueue
+	for _, category := range categories {
+		logger.Info("Adding recipe parsing task for category", zap.String("category_name", category.Name))
+		taskController.TaskQueue <- worker.Task{
+			ID:       category.Name,
+			Type:     "recipe",
+			Category: &category,
+		}
+	}
 
 	// Обработка сигналов для корректной остановки воркеров
 	stopChan := make(chan os.Signal, 1)

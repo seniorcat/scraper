@@ -67,12 +67,22 @@ func NewRecipeWorker(logger *zap.Logger, maxRecipes int, timeout time.Duration) 
 	return &RecipeWorker{Parser: parser}
 }
 
-// Start запускает воркер для парсинга рецептов
-func (w *RecipeWorker) Start(category Category) ([]Recipe, error) {
-	recipes, err := w.Parser.ParseRecipes(category)
-	if err != nil {
-		w.Parser.Logger.Error("Failed to parse recipes", zap.String("category", category.Name), zap.Error(err))
-		return nil, err
+// ProcessTasks запускает воркер для обработки задач из канала TaskQueue и отправки результатов в ResultQueue
+func (w *RecipeWorker) ProcessTasks(taskQueue chan Task, resultQueue chan Result) {
+	for task := range taskQueue {
+		// Обрабатываем только задачи типа "recipe"
+		if task.Type == "recipe" && task.Category != nil {
+			recipes, err := w.Parser.ParseRecipes(*task.Category)
+			if err != nil {
+				w.Parser.Logger.Error("Failed to parse recipes", zap.String("category", task.Category.Name), zap.Error(err))
+				continue
+			}
+
+			// Отправляем результаты в канал
+			resultQueue <- Result{
+				TaskID:  task.ID,
+				Recipes: recipes,
+			}
+		}
 	}
-	return recipes, nil
 }

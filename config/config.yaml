@@ -7,3 +7,4 @@ worker:
   timeout: 30
   maxRetries: 3
   retryInterval: 5
+  concurrency: 5

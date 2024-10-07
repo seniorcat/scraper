@@ -1,7 +1,7 @@
 package config
 
 import (
-	"io/ioutil"
+	"os"
 
 	"gopkg.in/yaml.v2"
 )
@@ -18,12 +18,13 @@ type Config struct {
 		Timeout       int `yaml:"timeout"`
 		MaxRetries    int `yaml:"maxRetries"`
 		RetryInterval int `yaml:"retryInterval"`
+		Concurrency   int `yaml:"concurrency"`
 	} `yaml:"worker"`
 }
 
 // LoadConfig загружает конфигурацию из файла YAML
 func LoadConfig(filePath string) (*Config, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
