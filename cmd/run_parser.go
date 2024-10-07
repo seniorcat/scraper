@@ -2,21 +2,68 @@ package cmd
 
 import (
 	"flag"
-	"fmt"
 	"log"
+
+	"github.com/seniorcat/scraper/worker"
+	"go.uber.org/zap"
 )
 
 // parse запускает процесс парсинга в зависимости от параметров.
 func parse(parseType, maxRecipes, concurrency int) {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("Не удалось инициализировать логгер: %v", err)
+	}
+	defer logger.Sync() // Синхронизация логов перед завершением работы
+
+	// Создание воркеров для категорий и рецептов
+	categoryWorker := worker.NewCategoryWorker(logger)
+	recipeWorker := worker.NewRecipeWorker(logger)
+
 	switch parseType {
 	case 1:
-		fmt.Println("Выполняется полный парсинг...")
-		// Здесь вызывается функция для парсинга категорий и рецептов
+		// Полный парсинг: категории + рецепты
+		logger.Info("Запуск полного парсинга...")
+
+		// Парсинг категорий
+		categories, err := categoryWorker.Start()
+		if err != nil {
+			logger.Error("Ошибка при парсинге категорий", zap.Error(err))
+			return
+		}
+
+		// Логирование найденных категорий и парсинг рецептов
+		for _, category := range categories {
+			logger.Info("Категория", zap.String("Name", category.Name), zap.String("Href", category.Href))
+
+			// Парсинг рецептов в каждой категории
+			recipes, err := recipeWorker.Start(category)
+			if err != nil {
+				logger.Error("Ошибка при парсинге рецептов", zap.String("Category", category.Name), zap.Error(err))
+				continue
+			}
+
+			// Логирование найденных рецептов
+			for _, recipe := range recipes {
+				logger.Info("Рецепт", zap.String("Name", recipe.Name), zap.String("Href", recipe.Href))
+			}
+		}
 	case 2:
-		fmt.Println("Выполняется парсинг только категорий...")
-		// Здесь вызывается функция для парсинга только категорий
+		// Парсинг только категорий
+		logger.Info("Запуск парсинга категорий...")
+
+		categories, err := categoryWorker.Start()
+		if err != nil {
+			logger.Error("Ошибка при парсинге категорий", zap.Error(err))
+			return
+		}
+
+		// Логирование найденных категорий
+		for _, category := range categories {
+			logger.Info("Категория", zap.String("Name", category.Name), zap.String("Href", category.Href))
+		}
 	default:
-		fmt.Println("Неверный тип парсинга. Используйте 1 для полного парсинга или 2 для парсинга только категорий.")
+		logger.Error("Неверный тип парсинга. Используйте 1 для полного парсинга или 2 для парсинга только категорий.")
 	}
 }
 
