@@ -1,94 +1,57 @@
 package cmd
 
 import (
-	"flag"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/seniorcat/scraper/config"
 	"github.com/seniorcat/scraper/worker"
 	"go.uber.org/zap"
 )
 
-// parse запускает процесс парсинга в зависимости от параметров.
-func parse(parseType, maxRecipes, concurrency int) {
+// RunParser запускает контроллер задач и управляет процессом парсинга
+func RunParser() {
+	// Инициализация логгера zap
 	logger, err := zap.NewProduction()
 	if err != nil {
 		log.Fatalf("Не удалось инициализировать логгер: %v", err)
 	}
-	defer logger.Sync() // Синхронизация логов перед завершением работы
+	defer logger.Sync()
 
-	// Создание воркеров для категорий и рецептов
-	categoryWorker := worker.NewCategoryWorker(logger, time.Duration(30)*time.Second)
-	recipeWorker := worker.NewRecipeWorker(logger, maxRecipes, time.Duration(30)*time.Second)
-
-	switch parseType {
-	case 1:
-		logger.Info("Запуск полного парсинга...")
-
-		// Парсинг категорий
-		categories, err := categoryWorker.Start()
-		if err != nil {
-			logger.Error("Ошибка при парсинге категорий", zap.Error(err))
-			return
-		}
-
-		// Логирование найденных категорий и парсинг рецептов
-		for _, category := range categories {
-			logger.Info("Категория", zap.String("Name", category.Name), zap.String("Href", category.Href))
-
-			// Парсинг рецептов в каждой категории
-			recipes, err := recipeWorker.Start(category)
-			if err != nil {
-				logger.Error("Ошибка при парсинге рецептов", zap.String("Category", category.Name), zap.Error(err))
-				continue
-			}
-
-			// Логирование найденных рецептов
-			for _, recipe := range recipes {
-				logger.Info("Рецепт", zap.String("Name", recipe.Name), zap.String("Href", recipe.Href))
-			}
-		}
-	case 2:
-		logger.Info("Запуск парсинга категорий...")
-
-		categories, err := categoryWorker.Start()
-		if err != nil {
-			logger.Error("Ошибка при парсинге категорий", zap.Error(err))
-			return
-		}
-
-		// Логирование найденных категорий
-		for _, category := range categories {
-			logger.Info("Категория", zap.String("Name", category.Name), zap.String("Href", category.Href))
-		}
-	default:
-		logger.Error("Неверный тип парсинга. Используйте 1 для полного парсинга или 2 для парсинга только категорий.")
-	}
-}
-
-// RunParser запускает парсер с переданными аргументами.
-func RunParser(args []string) error {
-	var (
-		parseType   int // Тип парсинга (1 - полный, 2 - только категории)
-		maxRecipes  int // Количество рецептов для парсинга в каждой категории
-		concurrency int // Количество одновременных потоков (горутин)
-	)
-
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	fs.IntVar(&parseType, "type", 1, "Тип парсинга: 1 - полный, 2 - только категории")
-	fs.IntVar(&maxRecipes, "recipes", 10, "Количество рецептов для каждой категории")
-	fs.IntVar(&concurrency, "concurrency", 5, "Количество одновременных потоков")
-
-	if err := fs.Parse(args); err != nil {
-		return err
+	// Загрузка конфигурации
+	cfg, err := config.LoadConfig("config/config.yaml")
+	if err != nil {
+		logger.Fatal("Ошибка загрузки конфигурации", zap.Error(err))
 	}
 
-	log.Println("Запуск парсера с параметрами:")
-	log.Printf("Тип парсинга: %d\n", parseType)
-	log.Printf("Количество рецептов: %d\n", maxRecipes)
-	log.Printf("Количество одновременных потоков: %d\n", concurrency)
+	// Считывание параметров из конфигурации
+	timeout := cfg.Worker.Timeout
+	maxRecipes := cfg.Worker.MaxRecipes
 
-	parse(parseType, maxRecipes, concurrency)
+	// Создание воркеров с использованием конфигурации
+	categoryWorker := worker.NewCategoryWorker(logger, time.Duration(timeout)*time.Second)
+	recipeWorker := worker.NewRecipeWorker(logger, int(maxRecipes), time.Duration(timeout)*time.Second)
 
-	return nil
+	// Создание контроллера задач
+	taskController := worker.NewTaskController(categoryWorker, recipeWorker, logger)
+
+	// Запуск контроллера задач
+	go taskController.Start()
+
+	// Добавление задачи для парсинга категорий
+	taskController.TaskQueue <- worker.Task{Type: "category"}
+
+	// Обработка сигналов для корректной остановки воркеров
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Ожидание сигнала остановки
+	<-stopChan
+
+	// Остановка контроллера задач
+	taskController.Stop()
+	logger.Info("Парсинг завершен.")
 }

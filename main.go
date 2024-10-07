@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/seniorcat/scraper/cmd"
 )
 
@@ -11,10 +9,7 @@ func main() {
 
 	// Регистрация команды "run"
 	cli.RegisterCommand("run", "Запуск парсера", func(args []string) {
-		if err := cmd.RunParser(args); err != nil {
-			// Обработка ошибки, если аргументы некорректные или другая проблема
-			fmt.Printf("Ошибка при запуске парсера: %v\n", err)
-		}
+		cmd.RunParser()
 	})
 
 	// Добавляем команду "help" для справки
