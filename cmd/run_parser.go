@@ -30,13 +30,15 @@ func RunParser() {
 	// Считывание параметров из конфигурации
 	timeout := cfg.Worker.Timeout
 	maxRecipes := cfg.Worker.MaxRecipes
+	retryInterval := cfg.Worker.RetryInterval
+	maxRetries := cfg.Worker.MaxRetries
 
 	// Создание воркеров с использованием конфигурации
 	categoryWorker := worker.NewCategoryWorker(logger, time.Duration(timeout)*time.Second)
 	recipeWorker := worker.NewRecipeWorker(logger, int(maxRecipes), time.Duration(timeout)*time.Second)
 
 	// Создание контроллера задач
-	taskController := worker.NewTaskController(categoryWorker, recipeWorker, logger)
+	taskController := worker.NewTaskController(categoryWorker, recipeWorker, logger, time.Duration(retryInterval)*time.Second, int(maxRetries))
 
 	// Запуск контроллера задач
 	go taskController.Start()
