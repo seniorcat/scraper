@@ -3,6 +3,7 @@ package cmd
 import (
 	"flag"
 	"log"
+	"time"
 
 	"github.com/seniorcat/scraper/worker"
 	"go.uber.org/zap"
@@ -17,12 +18,11 @@ func parse(parseType, maxRecipes, concurrency int) {
 	defer logger.Sync() // Синхронизация логов перед завершением работы
 
 	// Создание воркеров для категорий и рецептов
-	categoryWorker := worker.NewCategoryWorker(logger)
-	recipeWorker := worker.NewRecipeWorker(logger)
+	categoryWorker := worker.NewCategoryWorker(logger, time.Duration(30)*time.Second)
+	recipeWorker := worker.NewRecipeWorker(logger, maxRecipes, time.Duration(30)*time.Second)
 
 	switch parseType {
 	case 1:
-		// Полный парсинг: категории + рецепты
 		logger.Info("Запуск полного парсинга...")
 
 		// Парсинг категорий
@@ -49,7 +49,6 @@ func parse(parseType, maxRecipes, concurrency int) {
 			}
 		}
 	case 2:
-		// Парсинг только категорий
 		logger.Info("Запуск парсинга категорий...")
 
 		categories, err := categoryWorker.Start()

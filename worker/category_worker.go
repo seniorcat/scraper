@@ -1,8 +1,10 @@
 package worker
 
 import (
-	"github.com/gocolly/colly" // Используем Colly для парсинга
-	"go.uber.org/zap"          // Zap для логирования
+	"time"
+
+	"github.com/gocolly/colly"
+	"go.uber.org/zap"
 )
 
 // Category хранит информацию о категории
@@ -11,36 +13,61 @@ type Category struct {
 	Href string
 }
 
-// CategoryWorker отвечает за парсинг категорий
-type CategoryWorker struct {
+// CategoryParser отвечает за логику парсинга категорий
+type CategoryParser struct {
 	Collector *colly.Collector
 	Logger    *zap.Logger
+	timeout   time.Duration
 }
 
-// NewCategoryWorker создает новый экземпляр CategoryWorker
-func NewCategoryWorker(logger *zap.Logger) *CategoryWorker {
-	return &CategoryWorker{
-		Collector: colly.NewCollector(), // Инициализация Colly Collector
-		Logger:    logger,               // Инициализация логера
+// NewCategoryParser создает новый экземпляр CategoryParser
+func NewCategoryParser(logger *zap.Logger, timeout time.Duration) *CategoryParser {
+	return &CategoryParser{
+		Collector: colly.NewCollector(),
+		Logger:    logger,
+		timeout:   timeout,
 	}
 }
 
-// Start запускает парсинг категорий
-func (w *CategoryWorker) Start() ([]Category, error) {
+// ParseCategories выполняет сбор всех категорий
+func (p *CategoryParser) ParseCategories() ([]Category, error) {
 	var categories []Category
 
-	// Парсинг данных о категориях
-	w.Collector.OnHTML(".emotion-c3fqwx", func(e *colly.HTMLElement) {
+	p.Collector.OnHTML(".emotion-c3fqwx", func(e *colly.HTMLElement) {
 		category := Category{
-			Name: e.ChildText("a h3"),      // Извлечение названия категории
-			Href: e.ChildAttr("a", "href"), // Извлечение ссылки
+			Name: e.ChildText("a h3"),
+			Href: e.ChildAttr("a", "href"),
 		}
-		w.Logger.Info("Category found", zap.String("Name", category.Name))
-		categories = append(categories, category) // Добавление категории в список
+		p.Logger.Info("Category found", zap.String("Name", category.Name))
+		categories = append(categories, category)
 	})
 
-	// URL для посещения и запуска парсинга категорий
-	w.Collector.Visit("https://eda.ru")
+	// URL для парсинга
+	err := p.Collector.Visit("https://eda.ru")
+	if err != nil {
+		return nil, err
+	}
 
+	return categories, nil
+}
+
+// CategoryWorker управляет парсингом категорий
+type CategoryWorker struct {
+	Parser *CategoryParser
+}
+
+// NewCategoryWorker создает новый экземпляр CategoryWorker
+func NewCategoryWorker(logger *zap.Logger, timeout time.Duration) *CategoryWorker {
+	parser := NewCategoryParser(logger, timeout)
+	return &CategoryWorker{Parser: parser}
+}
+
+// Start запускает воркер для парсинга категорий
+func (w *CategoryWorker) Start() ([]Category, error) {
+	categories, err := w.Parser.ParseCategories()
+	if err != nil {
+		w.Parser.Logger.Error("Failed to parse categories", zap.Error(err))
+		return nil, err
+	}
 	return categories, nil
 }

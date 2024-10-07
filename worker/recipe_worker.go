@@ -1,8 +1,10 @@
 package worker
 
 import (
-	"github.com/gocolly/colly" // Используем Colly для парсинга
-	"go.uber.org/zap"          // Zap для логирования
+	"time"
+
+	"github.com/gocolly/colly"
+	"go.uber.org/zap"
 )
 
 // Recipe хранит информацию о рецепте
@@ -11,36 +13,66 @@ type Recipe struct {
 	Href string
 }
 
-// RecipeWorker отвечает за парсинг рецептов
-type RecipeWorker struct {
-	Collector *colly.Collector
-	Logger    *zap.Logger
+// RecipeParser отвечает за логику парсинга рецептов
+type RecipeParser struct {
+	Collector  *colly.Collector
+	Logger     *zap.Logger
+	maxRecipes int
+	timeout    time.Duration
 }
 
-// NewRecipeWorker создает новый экземпляр RecipeWorker
-func NewRecipeWorker(logger *zap.Logger) *RecipeWorker {
-	return &RecipeWorker{
-		Collector: colly.NewCollector(), // Инициализация Colly Collector
-		Logger:    logger,               // Инициализация логера
+// NewRecipeParser создает новый экземпляр RecipeParser
+func NewRecipeParser(logger *zap.Logger, maxRecipes int, timeout time.Duration) *RecipeParser {
+	return &RecipeParser{
+		Collector:  colly.NewCollector(),
+		Logger:     logger,
+		maxRecipes: maxRecipes,
+		timeout:    timeout,
 	}
 }
 
-// Start запускает парсинг рецептов из конкретной категории
-func (w *RecipeWorker) Start(category Category) ([]Recipe, error) {
+// ParseRecipes парсит рецепты для заданной категории
+func (p *RecipeParser) ParseRecipes(category Category) ([]Recipe, error) {
 	var recipes []Recipe
 
-	// Парсинг данных о рецептах
-	w.Collector.OnHTML(".emotion-1j5xcrd", func(e *colly.HTMLElement) {
-		recipe := Recipe{
-			Name: e.ChildText("a span"),    // Извлечение названия рецепта
-			Href: e.ChildAttr("a", "href"), // Извлечение ссылки на рецепт
+	p.Collector.OnHTML(".emotion-1j5xcrd", func(e *colly.HTMLElement) {
+		if len(recipes) >= p.maxRecipes {
+			return // Прерывание парсинга, если достигнут лимит рецептов
 		}
-		w.Logger.Info("Recipe found", zap.String("Name", recipe.Name))
-		recipes = append(recipes, recipe) // Добавление рецепта в список
+		recipe := Recipe{
+			Name: e.ChildText("a span"),
+			Href: e.ChildAttr("a", "href"),
+		}
+		p.Logger.Info("Recipe found", zap.String("Name", recipe.Name))
+		recipes = append(recipes, recipe)
 	})
 
-	// URL для посещения и запуска парсинга рецептов
-	w.Collector.Visit("https://eda.ru" + category.Href)
+	// URL для парсинга
+	err := p.Collector.Visit("https://eda.ru" + category.Href)
+	if err != nil {
+		return nil, err
+	}
 
+	return recipes, nil
+}
+
+// RecipeWorker управляет парсингом рецептов
+type RecipeWorker struct {
+	Parser *RecipeParser
+}
+
+// NewRecipeWorker создает новый экземпляр RecipeWorker
+func NewRecipeWorker(logger *zap.Logger, maxRecipes int, timeout time.Duration) *RecipeWorker {
+	parser := NewRecipeParser(logger, maxRecipes, timeout)
+	return &RecipeWorker{Parser: parser}
+}
+
+// Start запускает воркер для парсинга рецептов
+func (w *RecipeWorker) Start(category Category) ([]Recipe, error) {
+	recipes, err := w.Parser.ParseRecipes(category)
+	if err != nil {
+		w.Parser.Logger.Error("Failed to parse recipes", zap.String("category", category.Name), zap.Error(err))
+		return nil, err
+	}
 	return recipes, nil
 }
