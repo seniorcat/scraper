@@ -68,10 +68,10 @@ func NewTaskController(categoryWorker *CategoryWorker, workersCount int, logger 
 }
 
 // InitWorkerPool инициализирует пул воркеров
-func (tc *TaskController) InitWorkerPool(maxRecipes int, timeout time.Duration) {
+func (tc *TaskController) InitWorkerPool(maxRecipes int, rps int, timeout time.Duration) {
 	// Создаем воркеры и добавляем их в пул
 	for i := 0; i < tc.WorkersCount; i++ {
-		worker := NewRecipeWorker(tc.Logger, maxRecipes, timeout)
+		worker := NewRecipeWorker(tc.Logger, maxRecipes, rps, timeout)
 		tc.RecipeWorkers = append(tc.RecipeWorkers, worker)
 
 		// Запускаем каждого воркера в отдельной горутине
@@ -82,12 +82,14 @@ func (tc *TaskController) InitWorkerPool(maxRecipes int, timeout time.Duration) 
 }
 
 // Start запускает контроллер задач для обработки всех задач из очереди
-func (tc *TaskController) Start(maxRecipes int, timeout time.Duration) {
+func (tc *TaskController) Start(maxRecipes int, rps int, timeout time.Duration) {
+	tc.wg.Add(1)
 	// Инициализация пула воркеров
-	tc.InitWorkerPool(maxRecipes, timeout)
+	tc.InitWorkerPool(maxRecipes, rps, timeout)
 
 	// Запуск обработки результатов
 	go tc.ProcessResults()
+	tc.wg.Wait()
 }
 
 // Stop завершает работу контроллера задач

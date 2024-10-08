@@ -19,6 +19,7 @@ type Config struct {
 		MaxRetries    int `yaml:"maxRetries"`
 		RetryInterval int `yaml:"retryInterval"`
 		Concurrency   int `yaml:"concurrency"`
+		RPS           int `yaml:"rps"`
 	} `yaml:"worker"`
 }
 

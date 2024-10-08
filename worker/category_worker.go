@@ -17,14 +17,16 @@ type Category struct {
 type CategoryParser struct {
 	Collector *colly.Collector
 	Logger    *zap.Logger
+	Limiter   *RateLimiter // Добавляем лимитер в воркер
 	timeout   time.Duration
 }
 
 // NewCategoryParser создает новый экземпляр CategoryParser
-func NewCategoryParser(logger *zap.Logger, timeout time.Duration) *CategoryParser {
+func NewCategoryParser(logger *zap.Logger, rps int, timeout time.Duration) *CategoryParser {
 	return &CategoryParser{
 		Collector: colly.NewCollector(),
 		Logger:    logger,
+		Limiter:   NewRateLimiter(rps), // Инициализируем лимитер
 		timeout:   timeout,
 	}
 }
@@ -57,8 +59,8 @@ type CategoryWorker struct {
 }
 
 // NewCategoryWorker создает новый экземпляр CategoryWorker
-func NewCategoryWorker(logger *zap.Logger, timeout time.Duration) *CategoryWorker {
-	parser := NewCategoryParser(logger, timeout)
+func NewCategoryWorker(logger *zap.Logger, rps int, timeout time.Duration) *CategoryWorker {
+	parser := NewCategoryParser(logger, rps, timeout)
 	return &CategoryWorker{Parser: parser}
 }
 

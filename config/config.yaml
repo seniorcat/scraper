@@ -8,3 +8,4 @@ worker:
   maxRetries: 3
   retryInterval: 5
   concurrency: 5
+  rps: 10 # Ограничение запросов в секунду

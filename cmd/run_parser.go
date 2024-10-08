@@ -33,15 +33,16 @@ func RunParser() {
 	retryInterval := cfg.Worker.RetryInterval
 	maxRetries := cfg.Worker.MaxRetries
 	concurrency := cfg.Worker.Concurrency
+	rps := cfg.Worker.RPS
 
-	// Создание воркера для категорий
-	categoryWorker := worker.NewCategoryWorker(logger, time.Duration(timeout)*time.Second)
+	// Создание воркера для категорий с передачей лимитера в воркеры
+	categoryWorker := worker.NewCategoryWorker(logger, rps, time.Duration(timeout)*time.Second)
 
 	// Создание контроллера задач с пулом воркеров
-	taskController := worker.NewTaskController(categoryWorker, int(concurrency), logger, time.Duration(retryInterval)*time.Second, int(maxRetries))
+	taskController := worker.NewTaskController(categoryWorker, concurrency, logger, time.Duration(retryInterval)*time.Second, maxRetries)
 
 	// Запуск контроллера задач и пула воркеров
-	go taskController.Start(int(maxRecipes), time.Duration(timeout)*time.Second)
+	go taskController.Start(maxRecipes, rps, time.Duration(timeout)*time.Second)
 
 	// Логирование запуска задачи
 	logger.Info("Adding category parsing task to the queue")

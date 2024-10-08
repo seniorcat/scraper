@@ -17,15 +17,17 @@ type Recipe struct {
 type RecipeParser struct {
 	Collector  *colly.Collector
 	Logger     *zap.Logger
+	Limiter    *RateLimiter // Добавляем лимитер в воркер
 	maxRecipes int
 	timeout    time.Duration
 }
 
 // NewRecipeParser создает новый экземпляр RecipeParser
-func NewRecipeParser(logger *zap.Logger, maxRecipes int, timeout time.Duration) *RecipeParser {
+func NewRecipeParser(logger *zap.Logger, maxRecipes int, rps int, timeout time.Duration) *RecipeParser {
 	return &RecipeParser{
 		Collector:  colly.NewCollector(),
 		Logger:     logger,
+		Limiter:    NewRateLimiter(rps), // Инициализируем лимитер
 		maxRecipes: maxRecipes,
 		timeout:    timeout,
 	}
@@ -34,6 +36,8 @@ func NewRecipeParser(logger *zap.Logger, maxRecipes int, timeout time.Duration) 
 // ParseRecipes парсит рецепты для заданной категории
 func (p *RecipeParser) ParseRecipes(category Category) ([]Recipe, error) {
 	var recipes []Recipe
+
+	p.Limiter.TakeToken() // Запрашиваем токен перед выполнением запроса
 
 	p.Collector.OnHTML(".emotion-1j5xcrd", func(e *colly.HTMLElement) {
 		if len(recipes) >= p.maxRecipes {
@@ -62,8 +66,8 @@ type RecipeWorker struct {
 }
 
 // NewRecipeWorker создает новый экземпляр RecipeWorker
-func NewRecipeWorker(logger *zap.Logger, maxRecipes int, timeout time.Duration) *RecipeWorker {
-	parser := NewRecipeParser(logger, maxRecipes, timeout)
+func NewRecipeWorker(logger *zap.Logger, maxRecipes int, rps int, timeout time.Duration) *RecipeWorker {
+	parser := NewRecipeParser(logger, maxRecipes, rps, timeout)
 	return &RecipeWorker{Parser: parser}
 }
 
