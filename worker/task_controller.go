@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/seniorcat/scraper/entity"
 	"go.uber.org/zap"
 )
 
@@ -23,14 +24,14 @@ const (
 type Task struct {
 	ID         string
 	Type       string
-	Category   *Category
+	Category   *entity.Category
 	RetryCount int
 }
 
 // Result представляет результат выполнения задачи
 type Result struct {
 	TaskID  string
-	Recipes []Recipe
+	Recipes []entity.Recipe
 }
 
 // TaskController управляет распределением задач между воркерами

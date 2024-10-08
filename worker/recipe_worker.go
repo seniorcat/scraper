@@ -4,20 +4,15 @@ import (
 	"time"
 
 	"github.com/gocolly/colly"
+	"github.com/seniorcat/scraper/entity"
 	"go.uber.org/zap"
 )
-
-// Recipe хранит информацию о рецепте
-type Recipe struct {
-	Name string
-	Href string
-}
 
 // RecipeParser отвечает за логику парсинга рецептов
 type RecipeParser struct {
 	Collector  *colly.Collector
 	Logger     *zap.Logger
-	Limiter    *RateLimiter // Добавляем лимитер в воркер
+	Limiter    *RateLimiter
 	maxRecipes int
 	timeout    time.Duration
 }
@@ -27,25 +22,31 @@ func NewRecipeParser(logger *zap.Logger, maxRecipes int, rps int, timeout time.D
 	return &RecipeParser{
 		Collector:  colly.NewCollector(),
 		Logger:     logger,
-		Limiter:    NewRateLimiter(rps), // Инициализируем лимитер
+		Limiter:    NewRateLimiter(rps),
 		maxRecipes: maxRecipes,
 		timeout:    timeout,
 	}
 }
 
 // ParseRecipes парсит рецепты для заданной категории
-func (p *RecipeParser) ParseRecipes(category Category) ([]Recipe, error) {
-	var recipes []Recipe
+func (p *RecipeParser) ParseRecipes(category entity.Category) ([]entity.Recipe, error) {
+	var recipes []entity.Recipe
 
-	p.Limiter.TakeToken() // Запрашиваем токен перед выполнением запроса
+	p.Limiter.TakeToken() // Ограничение скорости запросов
 
 	p.Collector.OnHTML(".emotion-1j5xcrd", func(e *colly.HTMLElement) {
 		if len(recipes) >= p.maxRecipes {
 			return // Прерывание парсинга, если достигнут лимит рецептов
 		}
-		recipe := Recipe{
+		recipe := entity.Recipe{
 			Name: e.ChildText("a span"),
 			Href: e.ChildAttr("a", "href"),
+		}
+
+		// Валидация рецепта
+		if err := recipe.Validate(); err != nil {
+			p.Logger.Error("Invalid recipe data", zap.Error(err))
+			return
 		}
 		p.Logger.Info("Recipe found", zap.String("Name", recipe.Name))
 		recipes = append(recipes, recipe)
@@ -74,7 +75,6 @@ func NewRecipeWorker(logger *zap.Logger, maxRecipes int, rps int, timeout time.D
 // ProcessTasks запускает воркер для обработки задач из канала TaskQueue и отправки результатов в ResultQueue
 func (w *RecipeWorker) ProcessTasks(taskQueue chan Task, resultQueue chan Result) {
 	for task := range taskQueue {
-		// Обрабатываем только задачи типа "recipe"
 		if task.Type == "recipe" && task.Category != nil {
 			recipes, err := w.Parser.ParseRecipes(*task.Category)
 			if err != nil {

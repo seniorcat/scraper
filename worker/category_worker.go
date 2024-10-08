@@ -4,20 +4,15 @@ import (
 	"time"
 
 	"github.com/gocolly/colly"
+	"github.com/seniorcat/scraper/entity"
 	"go.uber.org/zap"
 )
-
-// Category хранит информацию о категории
-type Category struct {
-	Name string
-	Href string
-}
 
 // CategoryParser отвечает за логику парсинга категорий
 type CategoryParser struct {
 	Collector *colly.Collector
 	Logger    *zap.Logger
-	Limiter   *RateLimiter // Добавляем лимитер в воркер
+	Limiter   *RateLimiter
 	timeout   time.Duration
 }
 
@@ -26,20 +21,27 @@ func NewCategoryParser(logger *zap.Logger, rps int, timeout time.Duration) *Cate
 	return &CategoryParser{
 		Collector: colly.NewCollector(),
 		Logger:    logger,
-		Limiter:   NewRateLimiter(rps), // Инициализируем лимитер
+		Limiter:   NewRateLimiter(rps),
 		timeout:   timeout,
 	}
 }
 
 // ParseCategories выполняет сбор всех категорий
-func (p *CategoryParser) ParseCategories() ([]Category, error) {
-	var categories []Category
+func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
+	var categories []entity.Category
 
 	p.Collector.OnHTML(".emotion-c3fqwx", func(e *colly.HTMLElement) {
-		category := Category{
+		category := entity.Category{
 			Name: e.ChildText("a h3"),
 			Href: e.ChildAttr("a", "href"),
 		}
+
+		// Валидация категории
+		if err := category.Validate(); err != nil {
+			p.Logger.Error("Invalid category data", zap.Error(err))
+			return
+		}
+
 		p.Logger.Info("Category found", zap.String("Name", category.Name))
 		categories = append(categories, category)
 	})
@@ -65,7 +67,7 @@ func NewCategoryWorker(logger *zap.Logger, rps int, timeout time.Duration) *Cate
 }
 
 // Start запускает воркер для парсинга категорий
-func (w *CategoryWorker) Start() ([]Category, error) {
+func (w *CategoryWorker) Start() ([]entity.Category, error) {
 	categories, err := w.Parser.ParseCategories()
 	if err != nil {
 		w.Parser.Logger.Error("Failed to parse categories", zap.Error(err))
