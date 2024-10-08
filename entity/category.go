@@ -1,6 +1,9 @@
 package entity
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Category хранит информацию о категории
 type Category struct {
@@ -17,4 +20,20 @@ func (c *Category) Validate() error {
 		return fmt.Errorf("category href is empty")
 	}
 	return nil
+}
+
+// Normalize нормализует данные категории (например, удаляет лишние пробелы и приводит к нижнему регистру)
+func (c *Category) Normalize() {
+	c.Name = normalizeCategoryName(c.Name)
+	c.Href = normalizeHref(c.Href)
+}
+
+// normalizeCategoryName нормализует название категории
+func normalizeCategoryName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// normalizeHref нормализует ссылку
+func normalizeHref(href string) string {
+	return strings.TrimSpace(href)
 }

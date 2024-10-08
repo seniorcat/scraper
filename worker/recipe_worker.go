@@ -43,6 +43,9 @@ func (p *RecipeParser) ParseRecipes(category entity.Category) ([]entity.Recipe, 
 			Href: e.ChildAttr("a", "href"),
 		}
 
+		// Нормализация данных рецепта
+		recipe.Normalize()
+
 		// Валидация рецепта
 		if err := recipe.Validate(); err != nil {
 			p.Logger.Error("Invalid recipe data", zap.Error(err))

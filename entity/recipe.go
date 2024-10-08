@@ -1,6 +1,9 @@
 package entity
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Recipe хранит информацию о рецепте
 type Recipe struct {
@@ -17,4 +20,15 @@ func (r *Recipe) Validate() error {
 		return fmt.Errorf("recipe href is empty")
 	}
 	return nil
+}
+
+// Normalize нормализует данные рецепта (например, удаляет лишние пробелы и приводит к нижнему регистру)
+func (r *Recipe) Normalize() {
+	r.Name = normalizeRecipeName(r.Name)
+	r.Href = normalizeHref(r.Href)
+}
+
+// normalizeRecipeName нормализует название рецепта
+func normalizeRecipeName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }

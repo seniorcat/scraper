@@ -36,6 +36,9 @@ func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
 			Href: e.ChildAttr("a", "href"),
 		}
 
+		// Нормализация данных категории
+		category.Normalize()
+
 		// Валидация категории
 		if err := category.Validate(); err != nil {
 			p.Logger.Error("Invalid category data", zap.Error(err))
