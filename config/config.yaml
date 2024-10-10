@@ -1,5 +1,5 @@
 database:
-  url: "postgres://user:password@localhost:5432/scraperdb?sslmode=disable"
+  url: "postgres://postgres:postgres@localhost:5433/postgresDBScraper?sslmode=disable"
 
 worker:
   type: 1

@@ -1,9 +1,11 @@
 package worker
 
 import (
+	"context"
 	"sync"
 	"time"
 
+	"github.com/seniorcat/scraper/database"
 	"github.com/seniorcat/scraper/entity"
 	"go.uber.org/zap"
 )
@@ -48,11 +50,12 @@ type TaskController struct {
 	retryInterval time.Duration
 	maxRetries    int
 
-	wg sync.WaitGroup
+	wg        sync.WaitGroup
+	DBService *database.DBService // DI для работы с базой данных
 }
 
 // NewTaskController создает новый экземпляр TaskController
-func NewTaskController(categoryWorker *CategoryWorker, workersCount int, logger *zap.Logger, retryInterval time.Duration, maxRetries int) *TaskController {
+func NewTaskController(categoryWorker *CategoryWorker, workersCount int, logger *zap.Logger, retryInterval time.Duration, maxRetries int, dbService *database.DBService) *TaskController {
 	return &TaskController{
 		CategoryWorker: categoryWorker,
 		RecipeWorkers:  make([]*RecipeWorker, 0, workersCount), // Создаем слайс для пула воркеров
@@ -65,6 +68,7 @@ func NewTaskController(categoryWorker *CategoryWorker, workersCount int, logger 
 		Logger:        logger,
 		retryInterval: retryInterval,
 		maxRetries:    maxRetries,
+		DBService:     dbService,
 	}
 }
 
@@ -100,12 +104,18 @@ func (tc *TaskController) Stop() {
 	tc.wg.Done()
 }
 
-// ProcessResults обрабатывает результаты из канала ResultQueue
+// ProcessResults обрабатывает результаты из канала ResultQueue и сохраняет их в базу данных
 func (tc *TaskController) ProcessResults() {
+	ctx := context.Background()
 	for result := range tc.ResultQueue {
-		// Обрабатываем результат выполнения задачи
+		// Логирование результата
 		tc.Logger.Info("Result received", zap.String("task_id", result.TaskID), zap.Int("recipes_count", len(result.Recipes)))
 
-		// Дополнительная логика обработки результатов
+		// Сохранение рецептов в базу данных
+		if err := tc.DBService.SaveRecipes(ctx, result.Recipes); err != nil {
+			tc.Logger.Error("Failed to save recipes", zap.Error(err))
+		} else {
+			tc.Logger.Info("Recipes saved successfully", zap.String("task_id", result.TaskID))
+		}
 	}
 }
