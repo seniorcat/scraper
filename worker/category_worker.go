@@ -6,6 +6,7 @@ import (
 	"github.com/gocolly/colly"
 	"github.com/seniorcat/scraper/entity"
 	"github.com/seniorcat/scraper/pkg/cache"
+	"github.com/seniorcat/scraper/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -33,7 +34,8 @@ func NewCategoryParser(logger *zap.Logger, rps int, timeout time.Duration, cache
 func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
 	var categories []entity.Category
 	p.Collector.OnHTML(".emotion-18mh8uc .emotion-c3fqwx", func(e *colly.HTMLElement) {
-
+		// Увеличиваем счетчик запросов
+		metrics.RequestCounter.Inc()
 		// Извлечение имени категории, как было описано ранее
 		categoryName := e.DOM.Find("a .emotion-1ooehk6").Clone().Children().Remove().End().Text()
 
