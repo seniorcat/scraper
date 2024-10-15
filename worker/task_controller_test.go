@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/seniorcat/scraper/entity"
+	"github.com/seniorcat/scraper/pkg/cache"
 	"github.com/seniorcat/scraper/worker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -47,8 +48,8 @@ func TestTaskController_ProcessResults(t *testing.T) {
 
 	// Отправка результата в очередь для обработки
 	recipes := []entity.Recipe{
-		{Name: "Recipe1", Href: "https://example.com/recipe1"},
-		{Name: "Recipe2", Href: "https://example.com/recipe2"},
+		{Name: "Recipe1", Href: "/recepty/zavtraki/draniki-iz-batata-187448"},
+		{Name: "Recipe2", Href: "/recepty/zavtraki/grechnevij-zavtrak-22397"},
 	}
 
 	result := worker.Result{
@@ -75,9 +76,10 @@ func TestTaskController_AddTaskAndProcess(t *testing.T) {
 
 	// Настройка поведения мока: рецепты будут успешно сохранены
 	mockDB.On("SaveRecipes", mock.Anything, mock.Anything).Return(nil)
+	memCache := cache.NewMemoryCache() // Создаем новый кеш в памяти
 
 	// Создание воркера категории и контроллера задач
-	categoryWorker := worker.NewCategoryWorker(logger, 10, time.Second)
+	categoryWorker := worker.NewCategoryWorker(logger, 10, time.Second, memCache)
 	tc := worker.NewTaskController(categoryWorker, 2, logger, time.Second, 3, mockDB)
 
 	// Запуск контроллера задач
@@ -87,7 +89,7 @@ func TestTaskController_AddTaskAndProcess(t *testing.T) {
 	task := worker.Task{
 		ID:       "category1",
 		Type:     "recipe",
-		Category: &entity.Category{Name: "Category1", Href: "https://example.com/category1"},
+		Category: &entity.Category{Name: "Category1", Href: "/recepty/zavtraki"},
 	}
 	tc.TaskQueue <- task
 
@@ -97,8 +99,8 @@ func TestTaskController_AddTaskAndProcess(t *testing.T) {
 
 	// Обработка задачи воркером
 	recipes := []entity.Recipe{
-		{Name: "Recipe1", Href: "https://example.com/recipe1"},
-		{Name: "Recipe2", Href: "https://example.com/recipe2"},
+		{Name: "Recipe1", Href: "/recepty/zavtraki/draniki-iz-batata-187448"},
+		{Name: "Recipe2", Href: "/recepty/zavtraki/grechnevij-zavtrak-22397"},
 	}
 
 	// Отправляем результат в ResultQueue для обработки
@@ -122,12 +124,13 @@ func TestTaskController_AddTaskAndProcess(t *testing.T) {
 func TestTaskController_Stop(t *testing.T) {
 	// Инициализация мока базы данных
 	mockDB := new(MockDBService)
+	memCache := cache.NewMemoryCache() // Создаем новый кеш в памяти
 
 	// Инициализация логгера
 	logger, _ := zap.NewDevelopment()
 
 	// Создание воркера категории и контроллера задач
-	categoryWorker := worker.NewCategoryWorker(logger, 10, time.Second)
+	categoryWorker := worker.NewCategoryWorker(logger, 10, time.Second, memCache)
 	tc := worker.NewTaskController(categoryWorker, 2, logger, time.Second, 3, mockDB)
 
 	// Запуск контроллера задач
@@ -142,4 +145,41 @@ func TestTaskController_Stop(t *testing.T) {
 
 	_, ok = <-tc.ResultQueue
 	assert.False(t, ok)
+}
+
+func TestRecipeWorkerProcessTasks(t *testing.T) {
+	logger := zap.NewNop() // Используем no-op логгер для тестов
+	recipeWorker := worker.NewRecipeWorker(logger, 5, 10, time.Second*10)
+
+	taskQueue := make(chan worker.Task, 1)
+	resultQueue := make(chan worker.Result, 1)
+
+	// Пример категории для теста
+	category := entity.Category{
+		Name: "Test Category",
+		Href: "/recepty/zavtraki",
+	}
+
+	// Задача для обработки
+	taskQueue <- worker.Task{
+		ID:       "1",
+		Type:     "recipe",
+		Category: &category,
+	}
+	close(taskQueue)
+
+	// Запуск обработки задач
+	go recipeWorker.ProcessTasks(taskQueue, resultQueue)
+
+	result := <-resultQueue
+
+	// Проверка, что результат содержит рецепты
+	if len(result.Recipes) == 0 {
+		t.Errorf("Expected at least one recipe, got %d", len(result.Recipes))
+	}
+
+	// Проверка корректного ID задачи в результате
+	if result.TaskID != "1" {
+		t.Errorf("Expected task ID '1', got %s", result.TaskID)
+	}
 }
