@@ -79,6 +79,9 @@ func (tc *TaskController) InitWorkerPool(maxRecipes int, rps int, timeout time.D
 		worker := NewRecipeWorker(tc.Logger, maxRecipes, rps, timeout)
 		tc.RecipeWorkers = append(tc.RecipeWorkers, worker)
 
+		// Добавляем каждого воркера в группу ожидания
+		tc.wg.Add(1)
+
 		// Запускаем каждого воркера в отдельной горутине
 		go func(w *RecipeWorker) {
 			defer tc.wg.Done() // После завершения работы воркера уменьшаем счетчик WaitGroup
@@ -101,9 +104,14 @@ func (tc *TaskController) Start(maxRecipes int, rps int, timeout time.Duration) 
 
 // Stop завершает работу контроллера задач
 func (tc *TaskController) Stop() {
+	// Закрываем TaskQueue, чтобы прекратить отправку новых задач
 	close(tc.TaskQueue)
-	close(tc.ResultQueue)
+
+	// Ждем завершения всех воркеров
 	tc.wg.Wait()
+
+	// Закрываем ResultQueue только после того, как все результаты были отправлены
+	close(tc.ResultQueue)
 }
 
 // ProcessResults обрабатывает результаты из канала ResultQueue и сохраняет их в базу данных
