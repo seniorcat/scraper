@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -16,7 +15,6 @@ import (
 
 // RunParser запускает контроллер задач и управляет процессом парсинга
 func RunParser() {
-	// Инициализация логгера zap
 	logger, err := zap.NewProduction()
 	if err != nil {
 		log.Fatalf("Не удалось инициализировать логгер: %v", err)
@@ -35,8 +33,6 @@ func RunParser() {
 		logger.Fatal("Ошибка подключения к базе данных", zap.Error(err))
 	}
 
-	ctx := context.Background()
-
 	// Считывание параметров из конфигурации
 	timeout := cfg.Worker.Timeout
 	maxRecipes := cfg.Worker.MaxRecipes
@@ -45,13 +41,13 @@ func RunParser() {
 	concurrency := cfg.Worker.Concurrency
 	rps := cfg.Worker.RPS
 
-	// Создание воркера для категорий с передачей лимитера в воркеры
+	// Создание воркера для категорий
 	categoryWorker := worker.NewCategoryWorker(logger, rps, time.Duration(timeout)*time.Second)
 
 	// Создание контроллера задач с DI для работы с базой данных
 	taskController := worker.NewTaskController(categoryWorker, concurrency, logger, time.Duration(retryInterval)*time.Second, maxRetries, dbService)
 
-	// Запуск контроллера задач и пула воркеров
+	// Запуск контроллера задач
 	go taskController.Start(maxRecipes, rps, time.Duration(timeout)*time.Second)
 
 	// Логирование запуска задачи
@@ -63,10 +59,8 @@ func RunParser() {
 		logger.Fatal("Ошибка парсинга категорий", zap.Error(err))
 	}
 
-	// Сохранение категорий в базе данных
-	if err := dbService.SaveCategories(ctx, categories); err != nil {
-		logger.Fatal("Ошибка сохранения категорий", zap.Error(err))
-	}
+	// Отправка категорий на асинхронное сохранение
+	dbService.CategorySaveChan <- categories
 
 	// Добавление задач для парсинга рецептов в TaskQueue
 	for _, category := range categories {
@@ -84,6 +78,10 @@ func RunParser() {
 
 	// Ожидание сигнала остановки
 	<-stopChan
+
+	// Закрытие каналов для завершения работы воркеров
+	close(dbService.CategorySaveChan)
+	close(dbService.RecipeSaveChan)
 
 	// Остановка контроллера задач
 	taskController.Stop()

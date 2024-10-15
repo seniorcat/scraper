@@ -34,13 +34,13 @@ func (p *RecipeParser) ParseRecipes(category entity.Category) ([]entity.Recipe, 
 
 	p.Limiter.TakeToken() // Ограничение скорости запросов
 
-	p.Collector.OnHTML(".emotion-1j5xcrd", func(e *colly.HTMLElement) {
+	p.Collector.OnHTML(".emotion-13pp0tv", func(e *colly.HTMLElement) {
 		if len(recipes) >= p.maxRecipes {
 			return // Прерывание парсинга, если достигнут лимит рецептов
 		}
 		recipe := entity.Recipe{
-			Name: e.ChildText("a span"),
-			Href: e.ChildAttr("a", "href"),
+			Name: e.ChildAttr("img", "alt"),
+			Href: e.Attr("href"),
 		}
 
 		// Нормализация данных рецепта

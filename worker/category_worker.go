@@ -29,10 +29,21 @@ func NewCategoryParser(logger *zap.Logger, rps int, timeout time.Duration) *Cate
 // ParseCategories выполняет сбор всех категорий
 func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
 	var categories []entity.Category
+	// Используем карту для хранения уникальных категорий
+	uniqueCategories := make(map[string]struct{})
+	p.Collector.OnHTML(".emotion-18mh8uc .emotion-c3fqwx", func(e *colly.HTMLElement) {
 
-	p.Collector.OnHTML(".emotion-c3fqwx", func(e *colly.HTMLElement) {
+		// Извлечение имени категории, как было описано ранее
+		categoryName := e.DOM.Find("a .emotion-1ooehk6").Clone().Children().Remove().End().Text()
+
+		// Проверка, существует ли такая категория уже
+		if _, exists := uniqueCategories[categoryName]; exists {
+			p.Logger.Info("Duplicate category found, skipping", zap.String("Name", categoryName))
+			return
+		}
+
 		category := entity.Category{
-			Name: e.ChildText("a h3"),
+			Name: categoryName,
 			Href: e.ChildAttr("a", "href"),
 		}
 
@@ -44,6 +55,9 @@ func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
 			p.Logger.Error("Invalid category data", zap.Error(err))
 			return
 		}
+
+		// Добавление категории в карту уникальных категорий
+		uniqueCategories[categoryName] = struct{}{}
 
 		p.Logger.Info("Category found", zap.String("Name", category.Name))
 		categories = append(categories, category)

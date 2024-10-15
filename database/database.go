@@ -2,23 +2,63 @@ package database
 
 import (
 	"context"
+	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/seniorcat/scraper/entity"
 )
 
-// DBService предоставляет доступ к методам работы с базой данных
-type DBService struct {
-	Pool *pgxpool.Pool
+// DBServiceInterface определяет методы для работы с базой данных
+type DBServiceInterface interface {
+	SaveCategories(ctx context.Context, categories []entity.Category) error
+	SaveRecipes(ctx context.Context, recipes []entity.Recipe) error
 }
 
-// NewDBService инициализирует соединение с базой данных PostgreSQL и возвращает сервис базы данных
+// DBService предоставляет доступ к методам работы с базой данных
+type DBService struct {
+	Pool             *pgxpool.Pool
+	CategorySaveChan chan []entity.Category // Канал для сохранения категорий
+	RecipeSaveChan   chan []entity.Recipe   // Канал для сохранения рецептов
+}
+
+// NewDBService инициализирует соединение с базой данных PostgreSQL и запускает воркеры
 func NewDBService(connString string) (*DBService, error) {
 	pool, err := pgxpool.New(context.Background(), connString)
 	if err != nil {
 		return nil, err
 	}
-	return &DBService{Pool: pool}, nil
+
+	dbService := &DBService{
+		Pool:             pool,
+		CategorySaveChan: make(chan []entity.Category, 10), // Инициализация каналов
+		RecipeSaveChan:   make(chan []entity.Recipe, 10),
+	}
+
+	// Запуск горутин для асинхронного сохранения данных
+	go dbService.saveCategoriesWorker()
+	go dbService.saveRecipesWorker()
+
+	return dbService, nil
+}
+
+// saveCategoriesWorker - воркер для асинхронного сохранения категорий
+func (db *DBService) saveCategoriesWorker() {
+	for categories := range db.CategorySaveChan {
+		ctx := context.Background()
+		if err := db.SaveCategories(ctx, categories); err != nil {
+			log.Printf("Failed to save categories: %v", err)
+		}
+	}
+}
+
+// saveRecipesWorker - воркер для асинхронного сохранения рецептов
+func (db *DBService) saveRecipesWorker() {
+	for recipes := range db.RecipeSaveChan {
+		ctx := context.Background()
+		if err := db.SaveRecipes(ctx, recipes); err != nil {
+			log.Printf("Failed to save recipes: %v", err)
+		}
+	}
 }
 
 // SaveCategories сохраняет список категорий в базу данных

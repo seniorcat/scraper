@@ -51,11 +51,11 @@ type TaskController struct {
 	maxRetries    int
 
 	wg        sync.WaitGroup
-	DBService *database.DBService // DI для работы с базой данных
+	DBService database.DBServiceInterface // Используем интерфейс вместо структуры
 }
 
 // NewTaskController создает новый экземпляр TaskController
-func NewTaskController(categoryWorker *CategoryWorker, workersCount int, logger *zap.Logger, retryInterval time.Duration, maxRetries int, dbService *database.DBService) *TaskController {
+func NewTaskController(categoryWorker *CategoryWorker, workersCount int, logger *zap.Logger, retryInterval time.Duration, maxRetries int, dbService database.DBServiceInterface) *TaskController {
 	return &TaskController{
 		CategoryWorker: categoryWorker,
 		RecipeWorkers:  make([]*RecipeWorker, 0, workersCount), // Создаем слайс для пула воркеров
@@ -80,7 +80,10 @@ func (tc *TaskController) InitWorkerPool(maxRecipes int, rps int, timeout time.D
 		tc.RecipeWorkers = append(tc.RecipeWorkers, worker)
 
 		// Запускаем каждого воркера в отдельной горутине
-		go worker.ProcessTasks(tc.TaskQueue, tc.ResultQueue)
+		go func(w *RecipeWorker) {
+			defer tc.wg.Done() // После завершения работы воркера уменьшаем счетчик WaitGroup
+			w.ProcessTasks(tc.TaskQueue, tc.ResultQueue)
+		}(worker)
 	}
 
 	tc.Logger.Info("Worker pool initialized", zap.Int("workers_count", tc.WorkersCount))
@@ -88,20 +91,19 @@ func (tc *TaskController) InitWorkerPool(maxRecipes int, rps int, timeout time.D
 
 // Start запускает контроллер задач для обработки всех задач из очереди
 func (tc *TaskController) Start(maxRecipes int, rps int, timeout time.Duration) {
-	tc.wg.Add(1)
+	tc.wg.Add(tc.WorkersCount)
 	// Инициализация пула воркеров
 	tc.InitWorkerPool(maxRecipes, rps, timeout)
 
 	// Запуск обработки результатов
 	go tc.ProcessResults()
-	tc.wg.Wait()
 }
 
 // Stop завершает работу контроллера задач
 func (tc *TaskController) Stop() {
 	close(tc.TaskQueue)
 	close(tc.ResultQueue)
-	tc.wg.Done()
+	tc.wg.Wait()
 }
 
 // ProcessResults обрабатывает результаты из канала ResultQueue и сохраняет их в базу данных
