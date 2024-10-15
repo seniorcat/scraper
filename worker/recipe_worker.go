@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"sync"
 	"time"
 
 	"github.com/gocolly/colly"
@@ -64,18 +65,23 @@ func (p *RecipeParser) ParseRecipes(category entity.Category) ([]entity.Recipe, 
 	return recipes, nil
 }
 
-// RecipeWorker управляет парсингом рецептов
+// RecipeWorker управляет парсингом рецептов с синхронизацией
 type RecipeWorker struct {
-	Parser *RecipeParser
+	Parser         *RecipeParser
+	ProcessedCount int
+	Mutex          *sync.Mutex // Добавляем мьютекс для синхронизации
 }
 
 // NewRecipeWorker создает новый экземпляр RecipeWorker
 func NewRecipeWorker(logger *zap.Logger, maxRecipes int, rps int, timeout time.Duration) *RecipeWorker {
 	parser := NewRecipeParser(logger, maxRecipes, rps, timeout)
-	return &RecipeWorker{Parser: parser}
+	return &RecipeWorker{
+		Parser: parser,
+		Mutex:  &sync.Mutex{},
+	}
 }
 
-// ProcessTasks запускает воркер для обработки задач из канала TaskQueue и отправки результатов в ResultQueue
+// ProcessTasks запускает воркер для обработки задач и защищает доступ к счетчику
 func (w *RecipeWorker) ProcessTasks(taskQueue chan Task, resultQueue chan Result) {
 	for task := range taskQueue {
 		if task.Type == "recipe" && task.Category != nil {
@@ -85,7 +91,11 @@ func (w *RecipeWorker) ProcessTasks(taskQueue chan Task, resultQueue chan Result
 				continue
 			}
 
-			// Отправляем результаты в канал
+			// Безопасное обновление счетчика обработанных рецептов
+			w.Mutex.Lock()
+			w.ProcessedCount += len(recipes)
+			w.Mutex.Unlock()
+
 			resultQueue <- Result{
 				TaskID:  task.ID,
 				Recipes: recipes,
