@@ -9,6 +9,7 @@ import (
 
 	"github.com/seniorcat/scraper/config"
 	"github.com/seniorcat/scraper/database"
+	"github.com/seniorcat/scraper/pkg/cache"
 	"github.com/seniorcat/scraper/worker"
 	"go.uber.org/zap"
 )
@@ -41,8 +42,11 @@ func RunParser() {
 	concurrency := cfg.Worker.Concurrency
 	rps := cfg.Worker.RPS
 
+	// Создание кеша
+	cache := cache.NewMemoryCache()
+
 	// Создание воркера для категорий
-	categoryWorker := worker.NewCategoryWorker(logger, rps, time.Duration(timeout)*time.Second)
+	categoryWorker := worker.NewCategoryWorker(logger, rps, time.Duration(timeout)*time.Second, cache)
 
 	// Создание контроллера задач с DI для работы с базой данных
 	taskController := worker.NewTaskController(categoryWorker, concurrency, logger, time.Duration(retryInterval)*time.Second, maxRetries, dbService)

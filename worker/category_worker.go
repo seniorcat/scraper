@@ -5,6 +5,7 @@ import (
 
 	"github.com/gocolly/colly"
 	"github.com/seniorcat/scraper/entity"
+	"github.com/seniorcat/scraper/pkg/cache"
 	"go.uber.org/zap"
 )
 
@@ -14,31 +15,31 @@ type CategoryParser struct {
 	Logger    *zap.Logger
 	Limiter   *RateLimiter
 	timeout   time.Duration
+	Cache     *cache.MemoryCache
 }
 
 // NewCategoryParser создает новый экземпляр CategoryParser
-func NewCategoryParser(logger *zap.Logger, rps int, timeout time.Duration) *CategoryParser {
+func NewCategoryParser(logger *zap.Logger, rps int, timeout time.Duration, cache *cache.MemoryCache) *CategoryParser {
 	return &CategoryParser{
 		Collector: colly.NewCollector(),
 		Logger:    logger,
 		Limiter:   NewRateLimiter(rps),
 		timeout:   timeout,
+		Cache:     cache,
 	}
 }
 
 // ParseCategories выполняет сбор всех категорий
 func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
 	var categories []entity.Category
-	// Используем карту для хранения уникальных категорий
-	uniqueCategories := make(map[string]struct{})
 	p.Collector.OnHTML(".emotion-18mh8uc .emotion-c3fqwx", func(e *colly.HTMLElement) {
 
 		// Извлечение имени категории, как было описано ранее
 		categoryName := e.DOM.Find("a .emotion-1ooehk6").Clone().Children().Remove().End().Text()
 
-		// Проверка, существует ли такая категория уже
-		if _, exists := uniqueCategories[categoryName]; exists {
-			p.Logger.Info("Duplicate category found, skipping", zap.String("Name", categoryName))
+		// Проверка через кеш, была ли категория уже обработана
+		if p.Cache.Exists(categoryName) {
+			p.Logger.Info("Category already cached, skipping", zap.String("Name", categoryName))
 			return
 		}
 
@@ -56,8 +57,8 @@ func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
 			return
 		}
 
-		// Добавление категории в карту уникальных категорий
-		uniqueCategories[categoryName] = struct{}{}
+		// Добавление в кеш
+		p.Cache.Set(categoryName)
 
 		p.Logger.Info("Category found", zap.String("Name", category.Name))
 		categories = append(categories, category)
@@ -78,8 +79,8 @@ type CategoryWorker struct {
 }
 
 // NewCategoryWorker создает новый экземпляр CategoryWorker
-func NewCategoryWorker(logger *zap.Logger, rps int, timeout time.Duration) *CategoryWorker {
-	parser := NewCategoryParser(logger, rps, timeout)
+func NewCategoryWorker(logger *zap.Logger, rps int, timeout time.Duration, cache *cache.MemoryCache) *CategoryWorker {
+	parser := NewCategoryParser(logger, rps, timeout, cache)
 	return &CategoryWorker{Parser: parser}
 }
 
