@@ -30,13 +30,13 @@ func NewCategoryParser(logger *zap.Logger, rps int, timeout time.Duration, cache
 	}
 }
 
-// ParseCategories выполняет сбор всех категорий
-func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
-	var categories []entity.Category
+// ParseCategories выполняет сбор всех категорий и отправляет их в канал
+func (p *CategoryParser) ParseCategories(categoryQueue chan<- entity.Category) error {
 	p.Collector.OnHTML(".emotion-18mh8uc .emotion-c3fqwx", func(e *colly.HTMLElement) {
 		// Увеличиваем счетчик запросов
 		metrics.RequestCounter.Inc()
-		// Извлечение имени категории, как было описано ранее
+
+		// Извлечение имени категории
 		categoryName := e.DOM.Find("a .emotion-1ooehk6").Clone().Children().Remove().End().Text()
 
 		// Проверка через кеш, была ли категория уже обработана
@@ -63,16 +63,21 @@ func (p *CategoryParser) ParseCategories() ([]entity.Category, error) {
 		p.Cache.Set(categoryName)
 
 		p.Logger.Info("Category found", zap.String("Name", category.Name))
-		categories = append(categories, category)
+
+		// Отправляем категорию в канал
+		categoryQueue <- category
 	})
 
 	// URL для парсинга
 	err := p.Collector.Visit("https://eda.ru")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return categories, nil
+	// Закрываем канал после завершения парсинга
+	close(categoryQueue)
+
+	return nil
 }
 
 // CategoryWorker управляет парсингом категорий
@@ -86,12 +91,13 @@ func NewCategoryWorker(logger *zap.Logger, rps int, timeout time.Duration, cache
 	return &CategoryWorker{Parser: parser}
 }
 
-// Start запускает воркер для парсинга категорий
-func (w *CategoryWorker) Start() ([]entity.Category, error) {
-	categories, err := w.Parser.ParseCategories()
+// Start запускает воркер для парсинга категорий и отправляет их в канал
+func (w *CategoryWorker) Start(categoryQueue chan<- entity.Category) error {
+	// Запускаем парсинг категорий, передавая канал для отправки категорий
+	err := w.Parser.ParseCategories(categoryQueue)
 	if err != nil {
 		w.Parser.Logger.Error("Failed to parse categories", zap.Error(err))
-		return nil, err
+		return err
 	}
-	return categories, nil
+	return nil
 }

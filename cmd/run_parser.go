@@ -9,6 +9,7 @@ import (
 
 	"github.com/seniorcat/scraper/config"
 	"github.com/seniorcat/scraper/database"
+	"github.com/seniorcat/scraper/entity"
 	"github.com/seniorcat/scraper/pkg/cache"
 	"github.com/seniorcat/scraper/worker"
 	"go.uber.org/zap"
@@ -57,24 +58,31 @@ func RunParser() {
 	// Логирование запуска задачи
 	logger.Info("Adding category parsing task to the queue")
 
-	// Парсинг категорий
-	categories, err := categoryWorker.Start()
-	if err != nil {
-		logger.Fatal("Ошибка парсинга категорий", zap.Error(err))
-	}
+	// Создаем канал для категорий
+	categoryQueue := make(chan entity.Category)
 
-	// Отправка категорий на асинхронное сохранение
-	dbService.CategorySaveChan <- categories
-
-	// Добавление задач для парсинга рецептов в TaskQueue
-	for _, category := range categories {
-		logger.Info("Adding recipe parsing task for category", zap.String("category_name", category.Name))
-		taskController.TaskQueue <- worker.Task{
-			ID:       category.Name,
-			Type:     "recipe",
-			Category: &category,
+	// Запускаем парсинг категорий в отдельной горутине и передаем категории в канал
+	go func() {
+		err := categoryWorker.Start(categoryQueue) // Передаем канал в Start
+		if err != nil {
+			logger.Fatal("Ошибка парсинга категорий", zap.Error(err))
 		}
-	}
+	}()
+
+	// Обрабатываем категории: отправляем их на сохранение и добавляем задачи на парсинг рецептов
+	go func() {
+		for category := range categoryQueue {
+			// Отправляем категорию на асинхронное сохранение
+			dbService.CategorySaveChan <- []entity.Category{category}
+
+			// Добавляем задачу на парсинг рецептов
+			taskController.TaskQueue <- worker.Task{
+				ID:       category.Name,
+				Type:     "recipe",
+				Category: &category,
+			}
+		}
+	}()
 
 	// Обработка сигналов для корректной остановки воркеров
 	stopChan := make(chan os.Signal, 1)
